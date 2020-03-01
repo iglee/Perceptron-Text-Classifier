@@ -257,6 +257,7 @@ class RNNClassifier(FNNClassifier):
         super().__init__(args)
         # Start of your code
 
+        # Specify all relevant dimensions
         self.input_dim = 300
         self.hidden_dim = 20
         self.output_dim = 1
@@ -271,25 +272,23 @@ class RNNClassifier(FNNClassifier):
 
         # final sigmoid activation
         self.sigmoid = nn.Sigmoid()
-        
+
         # End of your code
         self.optim = torch.optim.Adam(self.parameters(), args.learning_rate)
 
     def forward(self, feat):
         feat = feat.unsqueeze(0)
-        #print(feat.shape)
-        #feat = feat.sum(1)
+
+        # feed to LSTM (input vector is of dim : 1 x [WORD LENGTH] x EMBED DIMENSION)
         h_lstm, _ = self.lstm(feat)
-        #print(h_lstm.shape)
+
+        # maximum activation, with dimension squeezed, so in our case, (1 x HIDDEN*2)
         max_pool, _ = torch.max(h_lstm, 1)
-        #print(max_pool)
-        #print(max_pool.shape)
 
+        # feed to linear layer to feed to final activation [HIDDEN*2 x 1]
         output = self.linear(max_pool)
-        #print(output)
-        #print(output.shape)
 
-
+        # return sigmoid activation [1 x 1]
         return self.sigmoid(output)
 
 
