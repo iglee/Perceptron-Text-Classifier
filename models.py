@@ -9,59 +9,6 @@ import embeddings as E
 from sentiment_data import *
 from collections import Counter, defaultdict
 
-
-################################
-# build vocabulary for UNIGRAM #
-################################
-train = read_sentiment_examples("data/train.txt")
-c = Counter()
-for sentence in train:
-    for word in sentence.words:
-        c.update([word.lower()])
-
-vocab = Counter()
-
-for x in c:
-    if c[x] > 3 and c[x] < 800:
-        vocab[x] = c[x]
-    else:
-        vocab["<UNK>"] += c[x]
-
-word_to_ix = {}
-
-for word in vocab.keys():
-    if word not in word_to_ix:
-        word_to_ix[word] = len(word_to_ix)
-
-VOCAB_SIZE = len(word_to_ix)
-
-
-
-###############################
-# build vocabulary for BETTER #
-###############################
-
-c_bigrams = Counter()
-for sentence in train:
-    for i in range(1,len(sentence.words)):
-        c_bigrams.update([(sentence.words[i-1].lower(),sentence.words[i].lower())])
-
-vocab_bigrams = Counter()
-for x in c_bigrams:
-    if c_bigrams[x] > 3 and c_bigrams[x] < 500:
-        vocab_bigrams[x] = c_bigrams[x]
-    else:
-        vocab_bigrams["<UNK>"] += c_bigrams[x]
-
-word_to_ix_bigrams = {"<LEN>" : 0} # length of sentence
-
-for word in vocab_bigrams.keys():
-    if word not in word_to_ix_bigrams:
-        word_to_ix_bigrams[word] = len(word_to_ix_bigrams)
-
-BIGRAM_VOCAB_SIZE = len(word_to_ix_bigrams)
-
-
 class FeatureExtractor:
 
     def extract_features(self, ex_words: List[str]) -> List[int]:
@@ -73,27 +20,49 @@ class UnigramFeatureExtractor(FeatureExtractor):
     and any additional preprocessing you want to do.
     """
 
+    def __init__(self):
+        self.corpus = []
+        self.vocab = Counter()
+        self.word_count = Counter()
+        self.word_to_ix = {} # vocab to index
+        self.weight = defaultdict() # index to weight
+
+
     def extract_features(self, ex_words):
         """
         Q1: Implement the unigram feature extractor.
         Hint: You may want to use the Counter class.
         """
-        vec = torch.zeros((1, len(word_to_ix)))
+        sentence = [word.lower() for word in ex_words]
+        count = Counter(sentence)
+        if sentence not in self.corpus:
+            self.corpus.append(sentence)
+            self.word_count.update(count)
 
-        words = []
-        for word in ex_words:
-            words.append(word.lower())
+            for x,c in self.word_count.items():
+                if c>2 and c<1000:
+                    self.vocab[x] = c
+                else:
+                    self.vocab["<UNK>"] += c
 
-        c = Counter(words)
+            for word in self.vocab.keys():
+                if word not in self.word_to_ix:
+                    self.word_to_ix[word] = len(self.word_to_ix)
 
-        for word in c:
-            x = word.lower()
-            if x in word_to_ix:
-                vec[0][word_to_ix[x]] = c[word]
+            # need to increase weight space as well:
+            for x in self.word_to_ix.keys():
+                if self.word_to_ix[x] not in self.weight:
+                    self.weight[self.word_to_ix[x]] = random.random()
+
+        # vector as a dictionary: {ix : count}
+        vec = defaultdict(int)
+        for x in sentence:
+            if x in self.word_to_ix:
+                vec[self.word_to_ix[x]] = count[x]
             else:
-                vec[0][word_to_ix["<UNK>"]] += c[word]
+                vec[self.word_to_ix["<UNK>"]] += count[x]
 
-        return vec.to_sparse()
+        return vec
 
 
         #raise NotImplementedError('Your code here')
@@ -103,29 +72,57 @@ class BetterFeatureExtractor(FeatureExtractor):
     """
     Better feature extractor...try whatever you can think of!
     """
+    def __init__(self):
+        self.corpus = []
+        self.vocab = Counter()
+        self.word_count = Counter()
+        self.word_to_ix = {} # vocab to index
+        self.weight = defaultdict() # index to weight
+
+
     def extract_features(self, ex_words):
         """
-        Q3: Implement the unigram feature extractor.
+        Q1: Implement the unigram feature extractor.
         Hint: You may want to use the Counter class.
         """
-        vec = torch.zeros((1, len(word_to_ix_bigrams)))
+        sentence = [word.lower() for word in ex_words]
+        bigrams = [(sentence[i-1], sentence[i]) for i in range(1,len(sentence))]
 
-        bigrams = []
-        for i in range(1, len(ex_words)):
-            bigrams.append((ex_words[i-1].lower(),ex_words[i].lower()))
+        count = Counter(sentence) + Counter(bigrams)
+        if sentence not in self.corpus:
+            self.corpus.append(sentence)
+            self.word_count.update(count)
 
-        bigram_count_sent = Counter(bigrams)
+            for x,c in self.word_count.items():
+                if len(x) == 1:
+                    if c>2 and c<1000:
+                        self.vocab[x] = c
+                    else:
+                        self.vocab["<UNK>"] += c
+                elif len(x) == 2:
+                    if c>2 and c<800:
+                        self.vocab[x] = c
+                    else:
+                        self.vocab["<UNK>"] += c
 
-        for bigram in bigram_count_sent:
-            if bigram in word_to_ix_bigrams:
-                vec[0][word_to_ix_bigrams[bigram]] = bigram_count_sent[bigram]
+            for word in self.vocab.keys():
+                if word not in self.word_to_ix:
+                    self.word_to_ix[word] = len(self.word_to_ix)
+
+            # need to increase weight space as well:
+            for x in self.word_to_ix.keys():
+                if self.word_to_ix[x] not in self.weight:
+                    self.weight[self.word_to_ix[x]] = random.random()
+
+        # vector as a dictionary: {ix : count}
+        vec = defaultdict(int)
+        for x in sentence+bigrams:
+            if x in self.word_to_ix:
+                vec[self.word_to_ix[x]] = count[x]
             else:
-                vec[0][word_to_ix_bigrams["<UNK>"]] += bigram_count_sent[bigram]
+                vec[self.word_to_ix["<UNK>"]] += count[x]
 
-        vec[0][0] = len(ex_words)
-        return vec.to_sparse()
-
-        # raise NotImplementedError('Your code here')
+        return vec
 
 
 class SentimentClassifier(object):
@@ -198,27 +195,15 @@ class PerceptronClassifier(SentimentClassifier):
     """
 
     def __init__(self, feat_extractor):
+        super(PerceptronClassifier, self).__init__()
         self.feat_extractor = feat_extractor
         # parameters:
-        if isinstance(self.feat_extractor,UnigramFeatureExtractor):
-            self.inputSize = VOCAB_SIZE
-            self.hiddenSize = 600
-        if isinstance(self.feat_extractor,BetterFeatureExtractor):
-            self.inputSize = BIGRAM_VOCAB_SIZE
-            self.hiddenSize = 500
+        self.corpus = self.feat_extractor.corpus
+        self.vocab = self.feat_extractor.vocab
+        self.word_count = self.feat_extractor.word_count
+        self.word_to_ix = self.feat_extractor.word_to_ix
+        self.weight = self.feat_extractor.weight # index to weight
 
-
-        self.outputSize = 1
-
-
-        # weights
-        self.W1 = torch.randn(self.inputSize, self.hiddenSize)
-        self.W2 = torch.randn(self.hiddenSize, self.outputSize)
-
-        # bias
-        self.b1 = torch.randn((1, self.hiddenSize))
-        self.b2 = torch.randn((1, self.outputSize))
-        #raise NotImplementedError('Your code here')
 
     def featurize(self, ex):
         """
@@ -227,15 +212,12 @@ class PerceptronClassifier(SentimentClassifier):
         return self.feat_extractor.extract_features(ex.words)
 
     def forward(self, feat) -> float:
-        # compute the activation of the perceptron
-        self.z = torch.matmul(feat, self.W1) + self.b1
-        self.z2 = 1/ (1 + torch.exp(-self.z)) # sigmoid
-        #self.z2 = self.z.clamp(min=0) # ReLU
-        self.z3 = torch.matmul(self.z2, self.W2) + self.b2
-        output = 1/ (1 + torch.exp(-self.z3)) # sigmoid
-        #output = self.z3.clamp(min=0)
-        return output
-        #raise NotImplementedError('Your code here')
+        output = 0
+        #print(feat)
+        #print(self.weight[0])
+        for x in feat.keys():
+            output += feat[x] * self.weight[x]
+        return 1/ (1 + math.exp(-output))
 
     def extract_pred(self, output) -> int:
         # compute the prediction of the perceptron given the activation
@@ -244,38 +226,13 @@ class PerceptronClassifier(SentimentClassifier):
         else:
             return 0
 
-        #raise NotImplementedError('Your code here')
-
-    def derivative_sigmoid(self, s):
-        # derivative of sigmoid
-        return s * (1 - s)
-
-    def derivative_relu(self, s):
-        temp = s.clone()
-        temp[s>0] = 1
-        temp[s<0] = 0
-        return temp
 
     def update_parameters(self, output, feat, ex, lr):
         # update the weight of the perceptron given its activation, the input features, the example, and the learning rate
-        self.loss = (ex.label - output) ** 2
-
-        self.delta_out = self.derivative_sigmoid(output)
-        #self.delta_out = self.derivative_relu(output)
-        self.delta_hidden = self.derivative_sigmoid(self.z2)
-        #self.delta_hidden = self.derivative_relu(self.z2)
-
-        self.d_outp = 2 * (ex.label - output) * self.delta_out
-        self.loss_h = torch.mm(self.d_outp, self.W2.t())
-        self.d_hidn = self.loss_h * self.delta_hidden
-
-        self.W2 += torch.mm(self.z2.t(), self.d_outp) * lr
-        self.W1 += torch.mm(feat.t(), self.d_hidn) * lr
-
-        self.b2 += self.d_outp.sum()
-        self.b1 += self.d_hidn.sum()
-
-        #raise NotImplementedError('Your code here')
+        loss = (ex.label - output) * lr
+        # self.weight(t+1) = self.weight(t) + loss * lr * feat
+        for x in feat.keys():
+            self.weight[x] = self.weight[x] + loss * feat[x]
 
 
 class FNNClassifier(SentimentClassifier, nn.Module):
@@ -312,6 +269,7 @@ class FNNClassifier(SentimentClassifier, nn.Module):
     def forward(self, feat) -> torch.Tensor:
         # compute the activation of the FNN
         feat = feat.unsqueeze(0)
+        feat = feat.sum(1)
         hidden1 = self.fc1(feat)
         tanh_activation = self.tanh(hidden1)
         hidden2 = self.fc2(tanh_activation)
@@ -331,7 +289,19 @@ class FNNClassifier(SentimentClassifier, nn.Module):
         # update the weight of the perceptron given its activation, the input features, the example, and the learning rate
         target = torch.Tensor([[ex.label]])
 
-        raise NotImplementedError('Your code here')
+        #specify BCE loss
+        criterion = nn.BCELoss()
+
+        # loss
+        loss = criterion(output, target)
+
+        # step back
+        loss.backward()
+        self.optim.step()
+
+        # clear grad
+        self.optim.zero_grad()
+        #raise NotImplementedError('Your code here')
 
 
 class RNNClassifier(FNNClassifier):
@@ -343,6 +313,11 @@ class RNNClassifier(FNNClassifier):
     def __init__(self, args):
         super().__init__(args)
         # Start of your code
+
+        self.input_dim = 300
+        self.output_dim = 1
+        self.lstm = nn.LSTM(self.input_dim, self.output_dim)
+
 
         raise NotImplementedError('Your code here')
 
