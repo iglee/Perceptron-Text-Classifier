@@ -258,18 +258,39 @@ class RNNClassifier(FNNClassifier):
         # Start of your code
 
         self.input_dim = 300
+        self.hidden_dim = 20
         self.output_dim = 1
-        self.lstm = nn.LSTM(self.input_dim, self.output_dim)
+        self.max_pool_dim = 40
+        self.n_layers = 1
 
+        # specify LSTM layer
+        self.lstm = nn.LSTM(self.input_dim, self.hidden_dim, self.n_layers, batch_first=True, bidirectional=True)
 
-        raise NotImplementedError('Your code here')
+        # layer to feed "max pooled output"
+        self.linear = nn.Linear(self.max_pool_dim, self.output_dim)
 
+        # final sigmoid activation
+        self.sigmoid = nn.Sigmoid()
+        
         # End of your code
         self.optim = torch.optim.Adam(self.parameters(), args.learning_rate)
 
     def forward(self, feat):
         feat = feat.unsqueeze(0)
-        raise NotImplementedError('Your code here')
+        #print(feat.shape)
+        #feat = feat.sum(1)
+        h_lstm, _ = self.lstm(feat)
+        #print(h_lstm.shape)
+        max_pool, _ = torch.max(h_lstm, 1)
+        #print(max_pool)
+        #print(max_pool.shape)
+
+        output = self.linear(max_pool)
+        #print(output)
+        #print(output.shape)
+
+
+        return self.sigmoid(output)
 
 
 class MyNNClassifier(FNNClassifier):
