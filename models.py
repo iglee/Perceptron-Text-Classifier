@@ -8,6 +8,7 @@ from torch import nn
 import embeddings as E
 from sentiment_data import *
 from collections import Counter, defaultdict
+from nltk import WordNetLemmatizer, SnowballStemmer
 
 class FeatureExtractor:
 
@@ -21,12 +22,7 @@ class UnigramFeatureExtractor(FeatureExtractor):
     """
 
     def __init__(self):
-        self.corpus = []
-        self.vocab = Counter()
-        self.word_count = Counter()
-        self.word_to_ix = {} # vocab to index
-        self.weight = defaultdict() # index to weight
-
+        self.stem = SnowballStemmer("english")
 
     def extract_features(self, ex_words):
         """
@@ -34,35 +30,8 @@ class UnigramFeatureExtractor(FeatureExtractor):
         Hint: You may want to use the Counter class.
         """
         sentence = [word.lower() for word in ex_words]
-        count = Counter(sentence)
-        if sentence not in self.corpus:
-            self.corpus.append(sentence)
-            self.word_count.update(count)
-
-            for x,c in self.word_count.items():
-                if c>2 and c<1000:
-                    self.vocab[x] = c
-                else:
-                    self.vocab["<UNK>"] += c
-
-            for word in self.vocab.keys():
-                if word not in self.word_to_ix:
-                    self.word_to_ix[word] = len(self.word_to_ix)
-
-            # need to increase weight space as well:
-            for x in self.word_to_ix.keys():
-                if self.word_to_ix[x] not in self.weight:
-                    self.weight[self.word_to_ix[x]] = random.random()
-
-        # vector as a dictionary: {ix : count}
-        vec = defaultdict(int)
-        for x in sentence:
-            if x in self.word_to_ix:
-                vec[self.word_to_ix[x]] = count[x]
-            else:
-                vec[self.word_to_ix["<UNK>"]] += count[x]
-
-        return vec
+        sentence = [self.stem.stem(word) for word in sentence]
+        return Counter(sentence)
 
 
         #raise NotImplementedError('Your code here')
@@ -73,56 +42,19 @@ class BetterFeatureExtractor(FeatureExtractor):
     Better feature extractor...try whatever you can think of!
     """
     def __init__(self):
-        self.corpus = []
-        self.vocab = Counter()
-        self.word_count = Counter()
-        self.word_to_ix = {} # vocab to index
-        self.weight = defaultdict() # index to weight
+        self.stem = SnowballStemmer("english")
 
 
     def extract_features(self, ex_words):
         """
-        Q1: Implement the unigram feature extractor.
-        Hint: You may want to use the Counter class.
+        Q1: Implement the better feature extractor.
         """
         sentence = [word.lower() for word in ex_words]
+        sentence = [self.stem.stem(word) for word in sentence]
         bigrams = [(sentence[i-1], sentence[i]) for i in range(1,len(sentence))]
 
-        count = Counter(sentence) + Counter(bigrams)
-        if sentence not in self.corpus:
-            self.corpus.append(sentence)
-            self.word_count.update(count)
+        return Counter(sentence) + Counter(bigrams)
 
-            for x,c in self.word_count.items():
-                if len(x) == 1:
-                    if c>2 and c<1000:
-                        self.vocab[x] = c
-                    else:
-                        self.vocab["<UNK>"] += c
-                elif len(x) == 2:
-                    if c>2 and c<800:
-                        self.vocab[x] = c
-                    else:
-                        self.vocab["<UNK>"] += c
-
-            for word in self.vocab.keys():
-                if word not in self.word_to_ix:
-                    self.word_to_ix[word] = len(self.word_to_ix)
-
-            # need to increase weight space as well:
-            for x in self.word_to_ix.keys():
-                if self.word_to_ix[x] not in self.weight:
-                    self.weight[self.word_to_ix[x]] = random.random()
-
-        # vector as a dictionary: {ix : count}
-        vec = defaultdict(int)
-        for x in sentence+bigrams:
-            if x in self.word_to_ix:
-                vec[self.word_to_ix[x]] = count[x]
-            else:
-                vec[self.word_to_ix["<UNK>"]] += count[x]
-
-        return vec
 
 
 class SentimentClassifier(object):
@@ -198,12 +130,10 @@ class PerceptronClassifier(SentimentClassifier):
         super(PerceptronClassifier, self).__init__()
         self.feat_extractor = feat_extractor
         # parameters:
-        self.corpus = self.feat_extractor.corpus
-        self.vocab = self.feat_extractor.vocab
-        self.word_count = self.feat_extractor.word_count
-        self.word_to_ix = self.feat_extractor.word_to_ix
-        self.weight = self.feat_extractor.weight # index to weight
-
+        self.corpus = []
+        self.word_count = Counter()
+        self.vocab = set()
+        self.weight = Counter()
 
     def featurize(self, ex):
         """
@@ -213,10 +143,13 @@ class PerceptronClassifier(SentimentClassifier):
 
     def forward(self, feat) -> float:
         output = 0
-        #print(feat)
-        #print(self.weight[0])
-        for x in feat.keys():
-            output += feat[x] * self.weight[x]
+        for x in feat:
+            # check if this word is in the vocab
+            if x in self.vocab:
+                if x not in self.weight:
+                    # if the model hasn't seen this word, initialize randomly
+                    self.weight[x] = random.random()
+                output += feat[x] * self.weight.get(x)
         return 1/ (1 + math.exp(-output))
 
     def extract_pred(self, output) -> int:
@@ -226,13 +159,23 @@ class PerceptronClassifier(SentimentClassifier):
         else:
             return 0
 
-
     def update_parameters(self, output, feat, ex, lr):
         # update the weight of the perceptron given its activation, the input features, the example, and the learning rate
+        # check if the vocab needs updating, i.e. the model hasn't seen this sentence before
+        if ex.words not in self.corpus:
+            self.corpus.append(ex.words)
+            self.word_count.update(feat)
+
+            for word, count in self.word_count.items():
+                if count > 2 and count < 4500:
+                    self.vocab.add(word)
+
+        # calculate loss times learning rate
         loss = (ex.label - output) * lr
-        # self.weight(t+1) = self.weight(t) + loss * lr * feat
-        for x in feat.keys():
-            self.weight[x] = self.weight[x] + loss * feat[x]
+
+        # update weight : w(t+1) = w(t) + loss * lr * input
+        for x in feat:
+            self.weight[x] += loss * feat[x]
 
 
 class FNNClassifier(SentimentClassifier, nn.Module):
