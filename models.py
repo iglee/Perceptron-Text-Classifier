@@ -10,7 +10,6 @@ from sentiment_data import *
 from collections import Counter, defaultdict
 from nltk import WordNetLemmatizer, SnowballStemmer
 from torch.nn import functional as F
-from torch.autograd import Variable
 
 class FeatureExtractor:
 
@@ -308,11 +307,12 @@ class MyNNClassifier(FNNClassifier):
         self.input_dim = 300
         self.hidden_dim = 20
         self.output_dim = 1
-        self.max_pool_dim = 40
         self.n_layers = 1
 
         # specify LSTM layer
         self.lstm = nn.LSTM(self.input_dim, self.hidden_dim, self.n_layers, batch_first=True, bidirectional=True)
+
+        self.tanh = nn.Tanh()
 
         self.conv_layer = nn.Linear(2*self.hidden_dim + self.input_dim, self.hidden_dim)
 
@@ -329,18 +329,31 @@ class MyNNClassifier(FNNClassifier):
         feat = feat.unsqueeze(0)
 
         # feed to LSTM (input vector is of dim : 1 x [WORD LENGTH] x EMBED DIMENSION)
-        h_lstm, (final_hidden_state, final_cell_state) = self.lstm(feat)
+        h_lstm, _ = self.lstm(feat)
+
+        # concatenate with raw input embeddings [i.e. embedding for before and after with hidden state]
         concat = torch.cat((h_lstm, feat), 2).permute(1,0,2)
+        #print(concat.shape)
         y = self.conv_layer(concat)
         #print(y)
         #print(y.shape)
         #print(h_lstm.shape)
-        y, _ = torch.max(y, 0) #, 1)
 
+        y = self.tanh(y).permute(0,2,1)
+        #print(y.shape)
+        #y = torch.max(y, 1) XX -> try max_pool1d
+        #print(y)
+
+
+        max_out_features = F.max_pool1d(y, y.shape[2]).squeeze(2)
+        #print(max_out_features.shape)
+        output = self.output_layer(max_out_features)
+        #print(output.shape)
+        #print(self.sigmoid(output.sum()))
         #print(y.shape)
 
-        return self.sigmoid(self.output_layer(y))
-        raise NotImplementedError()
+        return self.sigmoid(output.sum())
+        #raise NotImplementedError()
 
 
 

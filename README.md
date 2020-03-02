@@ -12,4 +12,5 @@
 ### 3. Recurrent Neural Networks
 - Bi-directional LSTM with "max pooling" activation to a linear fully connected layer.  Then, this is fed to final Sigmoid activation.
 
-### 4. TBD
+### 4. RCNN
+- Bi-directional LSTM with convolution and max pooling.
