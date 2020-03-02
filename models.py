@@ -9,6 +9,8 @@ import embeddings as E
 from sentiment_data import *
 from collections import Counter, defaultdict
 from nltk import WordNetLemmatizer, SnowballStemmer
+from torch.nn import functional as F
+from torch.autograd import Variable
 
 class FeatureExtractor:
 
@@ -187,13 +189,13 @@ class FNNClassifier(SentimentClassifier, nn.Module):
         super().__init__()
         self.glove = E.GloveEmbedding('wikipedia_gigaword', 300, default='zero')
         ### Start of your code
-        self.inputSize = 300
-        self.hiddenSize = 100
-        self.outputSize = 1
+        self.input_dim = 300
+        self.hidden_dim = 100
+        self.output_dim = 1
 
-        self.fc1 = nn.Linear(self.inputSize, self.hiddenSize) # 1st fully connected layer
+        self.fc1 = nn.Linear(self.input_dim, self.hidden_dim) # 1st fully connected layer
         self.tanh = nn.Tanh()
-        self.fc2 = nn.Linear(self.hiddenSize, self.outputSize) # 2nd fully connected layer
+        self.fc2 = nn.Linear(self.hidden_dim, self.output_dim) # 2nd fully connected layer
         self.sigmoid = nn.Sigmoid()
 
         #raise NotImplementedError('Your code here')
@@ -302,15 +304,45 @@ class MyNNClassifier(FNNClassifier):
         super().__init__(args)
         # Start of your code
 
-        raise NotImplementedError('Your code here')
+        # Specify all relevant dimensions
+        self.input_dim = 300
+        self.hidden_dim = 20
+        self.output_dim = 1
+        self.max_pool_dim = 40
+        self.n_layers = 1
+
+        # specify LSTM layer
+        self.lstm = nn.LSTM(self.input_dim, self.hidden_dim, self.n_layers, batch_first=True, bidirectional=True)
+
+        self.conv_layer = nn.Linear(2*self.hidden_dim + self.input_dim, self.hidden_dim)
+
+        self.output_layer = nn.Linear(self.hidden_dim, self.output_dim)
+
+        # final sigmoid activation
+        self.sigmoid = nn.Sigmoid()
 
         # End of your code
         self.optim = torch.optim.Adam(self.parameters(), args.learning_rate)
 
+
     def forward(self, feat):
         feat = feat.unsqueeze(0)
 
-        raise NotImplementedError('Your code here')
+        # feed to LSTM (input vector is of dim : 1 x [WORD LENGTH] x EMBED DIMENSION)
+        h_lstm, (final_hidden_state, final_cell_state) = self.lstm(feat)
+        concat = torch.cat((h_lstm, feat), 2).permute(1,0,2)
+        y = self.conv_layer(concat)
+        #print(y)
+        #print(y.shape)
+        #print(h_lstm.shape)
+        y, _ = torch.max(y, 0) #, 1)
+
+        #print(y.shape)
+
+        return self.sigmoid(self.output_layer(y))
+        raise NotImplementedError()
+
+
 
 
 def train_model(args, train_exs: List[SentimentExample], dev_exs: List[SentimentExample]) -> SentimentClassifier:
